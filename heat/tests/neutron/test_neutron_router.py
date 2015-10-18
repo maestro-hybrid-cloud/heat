@@ -808,7 +808,8 @@ class NeutronRouterTest(common.HeatTestCase):
                 "name": "Test Router",
                 "external_gateway_info": {
                     'network_id': '91e47a57-7508-46fe-afc9-fc454e8580e1',
-                    'enable_snat': False
+                    'enable_snat': False,
+                    'external_fixed_ips': [{'ip_address': '192.168.10.99'}]
                 },
                 "admin_state_up": True}}
         ).AndReturn(None)
@@ -819,7 +820,8 @@ class NeutronRouterTest(common.HeatTestCase):
                     "status": "ACTIVE",
                     "external_gateway_info": {
                         "network_id": "91e47a57-7508-46fe-afc9-fc454e8580e1",
-                        "enable_snat": False
+                        "enable_snat": False,
+                        "external_fixed_ips": [{"ip_address": "192.168.10.99"}]
                     },
                     "name": "Test Router",
                     "admin_state_up": True,
@@ -837,7 +839,8 @@ class NeutronRouterTest(common.HeatTestCase):
         update_template = copy.deepcopy(rsrc.t)
         update_template['Properties']['external_gateway_info'] = {
             "network": "other_public",
-            "enable_snat": False
+            "enable_snat": False,
+            "external_fixed_ips": [{"ip_address": "192.168.10.99"}]
         }
         scheduler.TaskRunner(rsrc.update, update_template)()
         self.assertEqual((rsrc.UPDATE, rsrc.COMPLETE), rsrc.state)
@@ -846,7 +849,9 @@ class NeutronRouterTest(common.HeatTestCase):
         self.assertEqual('91e47a57-7508-46fe-afc9-fc454e8580e1',
                          gateway_info.get('network_id'))
         self.assertFalse(gateway_info.get('enable_snat'))
-
+        self.assertEqual('192.168.10.99',
+                         gateway_info.get('external_fixed_ips')[0]
+                         .get('ip_address'))
         self.m.VerifyAll()
 
     def test_delete_router_gateway_as_property(self):
