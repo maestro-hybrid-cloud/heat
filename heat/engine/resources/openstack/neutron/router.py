@@ -35,8 +35,15 @@ class Router(neutron.NeutronResource):
 
     _EXTERNAL_GATEWAY_KEYS = (
         EXTERNAL_GATEWAY_NETWORK, EXTERNAL_GATEWAY_ENABLE_SNAT,
+        EXTERNAL_GATEWAY_FIXED_IPS,
     ) = (
-        'network', 'enable_snat',
+        'network', 'enable_snat', 'external_fixed_ips',
+    )
+
+    _EXTERNAL_GATEWAY_FIXED_IPS_KEYS = (
+        IP_ADDRESS
+    ) = (
+        'ip_address'
     )
 
     ATTRIBUTES = (
@@ -69,6 +76,24 @@ class Router(neutron.NeutronResource):
                       'default policy setting in Neutron restricts usage of '
                       'this property to administrative users only.'),
                     update_allowed=True
+                ),
+                EXTERNAL_GATEWAY_FIXED_IPS: properties.Schema(
+                    properties.Schema.LIST,
+                    _('External fixed IP addresses for the gateway.'),
+                    schema=properties.Schema(
+                        properties.Schema.MAP,
+                        schema={
+                            IP_ADDRESS: properties.Schema(
+                                properties.Schema.STRING,
+                                _('External fixed IP address.'),
+                                constraints=[
+                                    constraints.CustomConstraint('ip_addr'),
+                                ]
+                            )
+                        }
+                    ),
+                    update_allowed=True,
+                    support_status=support.SupportStatus(version='6.0.0')
                 ),
             },
             update_allowed=True
@@ -212,6 +237,8 @@ class Router(neutron.NeutronResource):
                 gateway, self.EXTERNAL_GATEWAY_NETWORK, 'network_id')
             if gateway[self.EXTERNAL_GATEWAY_ENABLE_SNAT] is None:
                 del gateway[self.EXTERNAL_GATEWAY_ENABLE_SNAT]
+            if gateway[self.EXTERNAL_GATEWAY_FIXED_IPS] is None:
+                del gateway[self.EXTERNAL_GATEWAY_FIXED_IPS]
         return props
 
     def _get_l3_agent_list(self, props):
