@@ -84,15 +84,11 @@ class Router(neutron.NeutronResource):
                             IP_ADDRESS: properties.Schema(
                                 properties.Schema.STRING,
                                 _('The external fixed IP address.'),
-                                constraints=[
-                                    constraints.CustomConstraint('ip_addr'),
-                                ]
                             )
                         }
                     ),
                     required=False,
                     update_allowed=True,
-                    support_status=support.SupportStatus(version='6.0.0')
                 ),
             },
             update_allowed=True
