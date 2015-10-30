@@ -19,14 +19,11 @@ from oslo_log import log as logging
 from heat.common import context
 from heat.common import exception
 from heat.common import grouputils
-from heat.common import template_format
 from heat.common.i18n import _
 from heat.engine import attributes
 from heat.engine import constraints
 from heat.engine import function
 from heat.engine import properties
-from heat.engine import resource
-from heat.engine import rsrc_defn
 from heat.engine import scheduler
 from heat.engine.resources.aws.autoscaling import autoscaling_group as aws_asg
 
@@ -170,11 +167,6 @@ class MultiRegionAutoScalingGroup(aws_asg.AutoScalingGroup):
         super(MultiRegionAutoScalingGroup, self).__init__(name, json_snippet, stack)
         self._local_context = None
 
-    def handle_create(self):
-        super(MultiRegionAutoScalingGroup, self).handle_create()
-        # self.data_set('servers_region_two', [])
-        # self.data_set('lb_pool_members', {})
-
     def _store_data(self, key, value):
         if key is not unicode:
             key = str(key)
@@ -187,17 +179,17 @@ class MultiRegionAutoScalingGroup(aws_asg.AutoScalingGroup):
 
         if data_type == 'list':
             if data is None:
-                data = []
+                data = '[]'
             return json.loads(data)
 
         if data_type == 'dict':
             if data is None:
-                data = {}
+                data = '{}'
             return json.loads(data)
 
         return data
 
-    def _add_servers_region_two(self, server):
+    def _add_server_region_two(self, server):
         servers_region_two = self._get_data(SERVERS_REGION_TWO_KEY, 'list')
         servers_region_two.append(server.id)
         self._store_data(SERVERS_REGION_TWO_KEY, servers_region_two)
@@ -215,7 +207,7 @@ class MultiRegionAutoScalingGroup(aws_asg.AutoScalingGroup):
         servers_region_two = self._get_data(SERVERS_REGION_TWO_KEY, 'list')
         return len(servers_region_two)
 
-    def _add_lb_pool_members(self, ip_address, new_member):
+    def _add_lb_pool_member(self, ip_address, new_member):
         lb_pool_members = self._get_data(LB_POOL_MEMBERS_KEY, 'dict')
         lb_pool_members.update({ip_address: new_member['member']['id']})
         self._store_data(LB_POOL_MEMBERS_KEY, lb_pool_members)
@@ -272,9 +264,24 @@ class MultiRegionAutoScalingGroup(aws_asg.AutoScalingGroup):
         return True
 
     def refresh_lb_pool_members(self):
+        allocated_ips = []
+        member_ips = []
+
         for server in grouputils.get_members(self):
             server_ip = server.FnGetAtt('PublicIp') or server.FnGetAtt('PrivateIp')
             self.create_lb_pool_member(server_ip)
+            allocated_ips.append(server_ip)
+
+        pool_id = self.properties.get(self.LOADBALANCER_POOL)
+        member_list = self.neutron().list_members(pool_id=pool_id)
+
+        members = member_list.get('members')
+        for member in members:
+            member_ips.append(member.get('address'))
+
+        for ip in member_ips:
+            if not ip in allocated_ips:
+                self.delete_lb_pool_member(ip)
 
     def create_lb_pool_member(self, ip_address):
         if not self._validate_lb_ip_address(ip_address):
@@ -288,7 +295,7 @@ class MultiRegionAutoScalingGroup(aws_asg.AutoScalingGroup):
                                     "address": ip_address
                                 }})
 
-        self._add_lb_pool_members(ip_address, new_member)
+        self._add_lb_pool_member(ip_address, new_member)
 
     def delete_lb_pool_member(self, ip_address):
         member_id = self._pop_lb_pool_member(ip_address)
@@ -333,7 +340,7 @@ class MultiRegionAutoScalingGroup(aws_asg.AutoScalingGroup):
             max_count=num_create
         )
         if server is not None:
-            self._add_servers_region_two(server)
+            self._add_server_region_two(server)
 
             def check_for_creation(server_id):
                 while not connect_to_lb(server_id):
@@ -448,6 +455,11 @@ class MultiRegionAutoScalingGroup(aws_asg.AutoScalingGroup):
 
         return is_available_instances(limits_dict) and is_available_cpus(limits_dict) and\
                     is_available_memory(limits_dict)
+
+    def handle_delete(self):
+        for k, v in self.data().items():
+            self.data_delete(k)
+        super(MultiRegionAutoScalingGroup, self).handle_delete()
 
 def resource_mapping():
     return {
