@@ -11,21 +11,30 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import json
-import uuid
 
 from oslo_log import log as logging
+from oslo_utils import excutils
 
-from heat.common import context
+import json
+import six
+
 from heat.common import exception
 from heat.common import grouputils
+from heat.common import template_format
 from heat.common.i18n import _
+from heat.common.i18n import _LI
+from heat.common.i18n import _LE
 from heat.engine import attributes
 from heat.engine import constraints
+from heat.engine import environment
 from heat.engine import function
 from heat.engine import properties
-from heat.engine import scheduler
+from heat.engine import rsrc_defn
 from heat.engine.resources.aws.autoscaling import autoscaling_group as aws_asg
+from heat.engine.resources.aws.autoscaling.autoscaling_group import _calculate_new_capacity
+from heat.scaling import template
+from heat.engine import template as engine_template
+from heat.engine.notification import autoscaling as notification
 
 lb_pool_member_resource = r'''
 type: OS::Neutron::PoolMember
@@ -34,9 +43,6 @@ properties:
   address: {ip_address}
   protocol_port: {protocol_port}
 '''
-
-SERVERS_REGION_TWO_KEY = 'servers_region_two'
-LB_POOL_MEMBERS_KEY = 'lb_pool_members'
 
 LOG = logging.getLogger(__name__)
 
@@ -163,64 +169,30 @@ class MultiRegionAutoScalingGroup(aws_asg.AutoScalingGroup):
         ),
     }
 
-    def __init__(self, name, json_snippet, stack):
-        super(MultiRegionAutoScalingGroup, self).__init__(name, json_snippet, stack)
-        self._local_context = None
+    def _make_remote_stack_definition(self, region_name, template, name):
+        rs_res_type = 'OS::Heat::Stack'
+        props = {
+            'context':  { 'region_name': region_name },
+            'template': template
+        }
+        rs_res_def = rsrc_defn.ResourceDefinition(name,
+                                                  rs_res_type,
+                                                  props)
+        return rs_res_def
 
-    def _store_data(self, key, value):
-        if key is not unicode:
-            key = str(key)
-        if value is not unicode:
-            value = json.dumps(value)
-        self.data_set(key, value)
-
-    def _get_data(self, key, data_type=None):
-        data = self.data().get(key)
-
-        if data_type == 'list':
-            if data is None:
-                data = '[]'
-            return json.loads(data)
-
-        if data_type == 'dict':
-            if data is None:
-                data = '{}'
-            return json.loads(data)
-
-        return data
-
-    def _add_server_region_two(self, server):
-        servers_region_two = self._get_data(SERVERS_REGION_TWO_KEY, 'list')
-        servers_region_two.append(server.id)
-        self._store_data(SERVERS_REGION_TWO_KEY, servers_region_two)
-
-    def _pop_server_region_two(self):
-        pop_server = None
-
-        servers_region_two = self._get_data(SERVERS_REGION_TWO_KEY, 'list')
-        pop_server = servers_region_two.pop()
-        self._store_data(SERVERS_REGION_TWO_KEY, servers_region_two)
-
-        return pop_server
-
-    def _count_instances_region_two(self):
-        servers_region_two = self._get_data(SERVERS_REGION_TWO_KEY, 'list')
-        return len(servers_region_two)
-
-    def _add_lb_pool_member(self, ip_address, new_member):
-        lb_pool_members = self._get_data(LB_POOL_MEMBERS_KEY, 'dict')
-        lb_pool_members.update({ip_address: new_member['member']['id']})
-        self._store_data(LB_POOL_MEMBERS_KEY, lb_pool_members)
-
-    def _pop_lb_pool_member(self, ip_address):
-        pop_member = None
-        lb_pool_members = self._get_data(LB_POOL_MEMBERS_KEY, 'dict')
-
-        pop_member = lb_pool_members.get(ip_address)
-        del lb_pool_members[ip_address]
-
-        self._store_data(LB_POOL_MEMBERS_KEY, lb_pool_members)
-        return pop_member
+    def _make_template_resource_snippet(self, name, type, properties, outputs):
+        json_snippet = {
+            'HeatTemplateFormatVersion': '2012-12-12',
+            'Parameters': {},
+            'Resources': {
+                name: {
+                    'Type': type,
+                    'Properties': properties
+                }
+            },
+            'Outputs': outputs
+        }
+        return json.dumps(json_snippet)
 
     def _get_conf_properties(self, region_two=False):
         instance_id = self.properties.get(self.INSTANCE_ID)
@@ -249,165 +221,147 @@ class MultiRegionAutoScalingGroup(aws_asg.AutoScalingGroup):
 
         return conf, props
 
-    def _validate_lb_ip_address(self, ip_address):
-        allocated_ips = []
+    def _get_instance_definition(self):
+        if self._is_available_current_region():
+            return super(MultiRegionAutoScalingGroup, self)._get_instance_definition()
+        else:
+            conf, props = self._get_conf_properties(region_two=True)
+            rsrc = rsrc_defn.ResourceDefinition(None,
+                                                'AWS::EC2::Instance',
+                                                props,
+                                                conf.t.metadata())
+            templ = self._make_template_resource_snippet('server', rsrc['Type'], rsrc['Properties'],
+                                                         {
+                                                             'PrivateIp':
+                                                              {
+                                                                  "Value": {
+                                                                      "Fn::GetAtt": ["server", "PrivateIp"]
+                                                                  },
+                                                                  "Description": ""
+                                                              }
+                                                         })
 
-        pool_id = self.properties.get(self.LOADBALANCER_POOL)
-        member_list = self.neutron().list_members(pool_id=pool_id)
+            return self._make_remote_stack_definition(self.properties.get(self.REGION_TWO_NAME),
+                                                      templ, None)
 
-        members = member_list.get('members')
-        for member in members:
-            allocated_ips.append(member.get('address'))
 
-        if ip_address in allocated_ips:
-            return False
-        return True
+    def _create_instance_template(self, num_instances, num_replace):
+        instance_definition = self._get_instance_definition()
+        old_resources = self._get_instance_templates()
+        definitions = template.resource_templates(
+            old_resources, instance_definition, num_instances, num_replace)
 
-    def refresh_lb_pool_members(self):
-        allocated_ips = []
-        member_ips = []
+        return definitions
 
-        for server in grouputils.get_members(self):
-            server_ip = server.FnGetAtt('PublicIp') or server.FnGetAtt('PrivateIp')
-            self.create_lb_pool_member(server_ip)
-            allocated_ips.append(server_ip)
-
-        pool_id = self.properties.get(self.LOADBALANCER_POOL)
-        member_list = self.neutron().list_members(pool_id=pool_id)
-
-        members = member_list.get('members')
-        for member in members:
-            member_ips.append(member.get('address'))
-
-        for ip in member_ips:
-            if not ip in allocated_ips:
-                self.delete_lb_pool_member(ip)
-
-    def create_lb_pool_member(self, ip_address):
-        if not self._validate_lb_ip_address(ip_address):
+    def adjust(self, adjustment, adjustment_type):
+        """
+        Adjust the size of the scaling group if the cooldown permits.
+        """
+        if self._cooldown_inprogress():
+            LOG.info(_LI("%(name)s NOT performing scaling adjustment, "
+                         "cooldown %(cooldown)s"),
+                     {'name': self.name,
+                      'cooldown': self.properties[self.COOLDOWN]})
             return
 
-        new_member = self.neutron().create_member({
-                                "member": {
-                                    "pool_id": self.properties.get(self.LOADBALANCER_POOL),
-                                    "admin_state_up": True,
-                                    "protocol_port": "80",
-                                    "address": ip_address
-                                }})
+        capacity = self._get_instances_count()
+        lower = self.properties[self.MIN_SIZE]
+        upper = self.properties[self.MAX_SIZE]
 
-        self._add_lb_pool_member(ip_address, new_member)
+        new_capacity = _calculate_new_capacity(capacity, adjustment,
+                                               adjustment_type, lower, upper)
 
-    def delete_lb_pool_member(self, ip_address):
-        member_id = self._pop_lb_pool_member(ip_address)
-        self.neutron().delete_member(member_id)
+        # send a notification before, on-error and on-success.
+        notif = {
+            'stack': self.stack,
+            'adjustment': adjustment,
+            'adjustment_type': adjustment_type,
+            'capacity': capacity,
+            'groupname': self.FnGetRefId(),
+            'message': _("Start resizing the group %(group)s") % {
+                'group': self.FnGetRefId()},
+            'suffix': 'start',
+        }
+        notification.send(**notif)
+        try:
+            self.resize(new_capacity)
+        except Exception as resize_ex:
+            with excutils.save_and_reraise_exception():
+                try:
+                    notif.update({'suffix': 'error',
+                                  'message': six.text_type(resize_ex),
+                                  })
+                    notification.send(**notif)
+                except Exception:
+                    LOG.exception(_LE('Failed sending error notification'))
+        else:
+            notif.update({
+                'suffix': 'end',
+                'capacity': new_capacity,
+                'message': _("End resizing the group %(group)s") % {
+                    'group': notif['groupname']},
+            })
+            notification.send(**notif)
+        finally:
+            self._cooldown_timestamp("%s : %s" % (adjustment_type,
+                                                  adjustment))
 
-    def _build_nics(self, subnet_id):
-        clients = self._context().clients
-        neutron_client = clients.neutron()
-        neutron_client_plugin = clients.client_plugin('neutron')
+    def _create_template(self, num_instances, num_replace=0,
+                     template_version=('HeatTemplateFormatVersion',
+                                       '2013-05-23')):
 
-        network_id = neutron_client_plugin.network_id_from_subnet_id(subnet_id)
-        if network_id:
-            fixed_ip = {'subnet_id': subnet_id}
-            port_props = {
-                'admin_state_up': True,
-                'network_id': network_id,
-                'fixed_ips': [fixed_ip]
+        instance_definitions = self._create_instance_template(num_instances, num_replace)
+
+        template = {
+            'HeatTemplateFormatVersion': '2012-12-12',
+            'Parameters': {},
+            'Resources': {},
+            'Outputs': {}
+        }
+
+        def template_resource(name, defn):
+            return  {
+                name: {
+                    'Type': defn.get('Type') or defn.get('type'),
+                    'Properties': defn.get('Properties') or defn.get('properties')
+                }
             }
 
-            port = neutron_client.create_port({'port': port_props})['port']
-            nics = [{'port-id': port['id']}]
+        for name, defn in instance_definitions:
+            template['Resources'].update(template_resource(name, defn))
 
-            return nics
-        return None
+            lb_address = '{ "Fn::GetAtt" : [ "%s", "PrivateIp" ]}' % name
+            if defn['Type'] == 'OS::Heat::Stack':
+                lb_address = '{ "Fn::Select" : [ "PrivateIp", { "Fn::GetAtt" : [ "%s" ,"outputs" ]} ] }' % name
 
-    def create_server_instances(self, num_create):
-        clients = self._context().clients
-        conf, props = self._get_conf_properties(region_two=True)
+            rsrc = template_format.simple_parse(lb_pool_member_resource.format(
+                pool_id=self.properties.get(self.LOADBALANCER_POOL),
+                ip_address=lb_address,
+                protocol_port='80'
+            ))
 
-        subnet_id = props['SubnetId']
-        nics = self._build_nics(subnet_id)
-        image_id = clients.client_plugin('glance').get_image_id(props['ImageId'])
-        key_id = clients.client_plugin('nova').get_flavor_id(props['InstanceType'])
+            template['Resources'].update(template_resource('lb-%s' % name, rsrc))
 
-        server = clients.nova().servers.create(
-            name='%s%s' % (self.physical_resource_name(), uuid.uuid4()),
-            image=image_id,
-            flavor=key_id,
-            key_name=props['KeyName'],
-            user_data=props['UserData'],
-            nics=nics,
-            max_count=num_create
-        )
-        if server is not None:
-            self._add_server_region_two(server)
+        child_env = environment.get_child_environment(
+            self.stack.env,
+            self.child_params(), item_to_remove=self.resource_info)
 
-            def check_for_creation(server_id):
-                while not connect_to_lb(server_id):
-                    yield
+        return engine_template.Template(template, env=child_env)
 
-            def connect_to_lb(server_id):
-                server = self._context().clients.nova().servers.get(server_id)
-                if server.status == 'ACTIVE':
-                    first_network = server.addresses.items()[0][1]
-                    first_network_info = first_network[0]
-                    ip_address = first_network_info.get('addr')
-
-                    self.create_lb_pool_member(ip_address)
-                    return True
-                return False
-
-            checker = scheduler.TaskRunner(check_for_creation, server.id)
-            checker(timeout=self.stack.timeout_secs())
-
-    def delete_server_instances(self, num_create):
-        count = num_create * -1
-        for i in range(count):
-            server_id = self._pop_server_region_two()
-
-            server = self._context().clients.nova().servers.get(server_id)
-            first_network = server.addresses.items()[0][1]
-            first_network_info = first_network[0]
-            ip_address = first_network_info.get('addr')
-
-            self.delete_lb_pool_member(ip_address)
-            self._context().clients.nova().servers.delete(server_id)
-
-    def check_create_complete(self, task):
-        done = super(MultiRegionAutoScalingGroup, self).check_create_complete(task)
-        if done:
-            self.refresh_lb_pool_members()
-        return done
-
-    def check_update_complete(self, cookie):
-        done = super(MultiRegionAutoScalingGroup, self).check_update_complete(cookie)
-        if done:
-            self.refresh_lb_pool_members()
-        return done
-
-    def _resize(self, size_diff):
-        if size_diff > 0:
-            self.create_server_instances(size_diff)
+    def _get_instances_count(self):
+        if self.nested():
+            resources = [r for r in six.itervalues(self.nested())
+                         if r.status != r.FAILED and r.type() == 'OS::Heat::ScaledResource']
+            return len(resources)
         else:
-            self.delete_server_instances(size_diff)
+            return 0
 
-    def resize(self, new_capacity):
-        def _get_size_diff(capacity):
-            old_resources = self._get_instance_templates()
-            num_create = capacity - len(old_resources)
-            return num_create
-
-        def _in_region_two(size_diff):
-            if (size_diff > 0 and self._is_available_current_region()) or \
-                    (size_diff <= 0 and self._count_instances_region_two() <= 0):\
-                return False
-            return True
-
-        size_diff = _get_size_diff(new_capacity)
-        if _in_region_two(size_diff):
-            self._resize(size_diff)
-        else:
-            super(MultiRegionAutoScalingGroup, self).resize(new_capacity)
+    def _get_instance_templates(self):
+        instance_resources = []
+        for member in grouputils.get_members(self):
+            if member.type() == 'OS::Heat::ScaledResource':
+                instance_resources.append((member.name, member.t))
+        return instance_resources
 
     def validate(self):
         instanceId = self.properties.get(self.INSTANCE_ID)
@@ -418,18 +372,6 @@ class MultiRegionAutoScalingGroup(aws_asg.AutoScalingGroup):
                     "must be provided.")
             raise exception.StackValidationFailed(message=msg)
         return super(MultiRegionAutoScalingGroup, self).validate()
-
-    def _context(self):
-        if self._local_context:
-            return self._local_context
-
-        self._region_name = self.properties.get(self.REGION_TWO_NAME)
-
-        dict_ctxt = self.context.to_dict()
-        dict_ctxt.update({'region_name': self._region_name})
-
-        self._local_context = context.RequestContext.from_dict(dict_ctxt)
-        return self._local_context
 
     def _is_available_current_region(self):
         limits = self.nova().limits.get(reserved=True).absolute
@@ -455,11 +397,6 @@ class MultiRegionAutoScalingGroup(aws_asg.AutoScalingGroup):
 
         return is_available_instances(limits_dict) and is_available_cpus(limits_dict) and\
                     is_available_memory(limits_dict)
-
-    def handle_delete(self):
-        for k, v in self.data().items():
-            self.data_delete(k)
-        super(MultiRegionAutoScalingGroup, self).handle_delete()
 
 def resource_mapping():
     return {
