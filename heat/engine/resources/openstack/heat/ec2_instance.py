@@ -111,6 +111,16 @@ class EC2Instance(resource.Resource, sh.SchedulerHintsMixin):
                 aws_secret_access_key=self.properties.get(self.AWS_SECRET_ACCESS_KEY))
         return self._ec2_conn
 
+    def validate(self):
+        aws_region_name = self.properties.get(self.AWS_REGION_NAME)
+        aws_access_key_id = self.properties.get(self.AWS_ACCESS_KEY_ID)
+        aws_secret_access_key = self.properties.get(self.AWS_SECRET_ACCESS_KEY)
+
+        if not (aws_region_name and aws_access_key_id and aws_secret_access_key):
+            raise ValueError(_('Required AWS account information for using AWS SDK!'))
+
+        super(EC2Instance, self).validate()
+
     def _resolve_attribute(self, name):
         if name == self.PRIVATE_IP:
             servers = self.ec2().get_only_instances(instance_ids=[self.resource_id])
