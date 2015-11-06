@@ -351,13 +351,19 @@ class MultiRegionAutoScalingGroup(aws_asg.AutoScalingGroup):
     def _get_instances_count(self):
         if self.nested():
             resources = [r for r in six.itervalues(self.nested())
-                         if r.status != r.FAILED and r.type() == 'OS::Heat::ScaledResource']
+                         if r.status != r.FAILED and
+                         (r.type() == 'OS::Heat::ScaledResource' or
+                          r.type() == 'OS::Heat::Stack')]   
             return len(resources)
         else:
             return 0
 
     def _get_instance_templates(self):
         instance_resources = []
+        for member in grouputils.get_members(self):
+            if member.type() == 'OS::Heat::Stack':
+                instance_resources.append((member.name, member.t))
+
         for member in grouputils.get_members(self):
             if member.type() == 'OS::Heat::ScaledResource':
                 instance_resources.append((member.name, member.t))
