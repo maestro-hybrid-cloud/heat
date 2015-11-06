@@ -11,28 +11,22 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import json
-
-import boto.ec2
-import boto.ec2.networkinterface
+import six
 
 from oslo_log import log as logging
 
-from heat.common import exception
 from heat.common import grouputils
 from heat.common.i18n import _
 from heat.engine import attributes
 from heat.engine import constraints
 from heat.engine import function
 from heat.engine import properties
-from heat.engine.resources.aws.autoscaling import autoscaling_group as aws_asg
-
-SERVERS_AWS_KEY = 'servers_aws'
-LB_POOL_MEMBERS_KEY = 'lb_pool_members'
+from heat.engine import rsrc_defn
+from heat.engine.resources.openstack.heat.mr_autoscaling_group import MultiRegionAutoScalingGroup
 
 LOG = logging.getLogger(__name__)
 
-class AWSAutoScalingGroup(aws_asg.AutoScalingGroup):
+class AWSHybridAutoScalingGroup(MultiRegionAutoScalingGroup):
 
     PROPERTIES = (
         MAX_SIZE, MIN_SIZE, COOLDOWN, DESIRED_CAPACITY, ROLLING_UPDATES,
@@ -193,74 +187,7 @@ class AWSAutoScalingGroup(aws_asg.AutoScalingGroup):
         ),
     }
 
-    def __init__(self, name, json_snippet, stack):
-        super(AWSAutoScalingGroup, self).__init__(name, json_snippet, stack)
-        self._local_context = None
-        self._ec2_conn = None
-
-    def ec2(self):
-        if self._ec2_conn is None:
-            self._ec2_conn = boto.ec2.connect_to_region(self.properties.get(self.AWS_REGION_NAME),
-                                                        aws_access_key_id=self.properties.get(self.AWS_ACCESS_KEY_ID),
-                                                        aws_secret_access_key=self.properties.get(self.AWS_SECRET_ACCESS_KEY))
-        return self._ec2_conn
-
-    def _store_data(self, key, value):
-        if key is not unicode:
-            key = str(key)
-        if value is not unicode:
-            value = json.dumps(value)
-        self.data_set(key, value)
-
-    def _get_data(self, key, data_type=None):
-        data = self.data().get(key)
-
-        if data_type == 'list':
-            if data is None:
-                data = '[]'
-            return json.loads(data)
-
-        if data_type == 'dict':
-            if data is None:
-                data = '{}'
-            return json.loads(data)
-
-        return data
-
-    def _add_server_region_two(self, servers):
-        servers_region_two = self._get_data(SERVERS_AWS_KEY, 'list')
-        servers_region_two.append(servers)
-        self._store_data(SERVERS_AWS_KEY, servers_region_two)
-
-    def _pop_server_region_two(self):
-        pop_server = None
-
-        servers_region_two = self._get_data(SERVERS_AWS_KEY, 'list')
-        pop_server = servers_region_two.pop()
-        self._store_data(SERVERS_AWS_KEY, servers_region_two)
-
-        return pop_server
-
-    def _count_instances_region_two(self):
-        servers_region_two = self._get_data(SERVERS_AWS_KEY, 'list')
-        return len(servers_region_two)
-
-    def _add_lb_pool_member(self, ip_address, new_member):
-        lb_pool_members = self._get_data(LB_POOL_MEMBERS_KEY, 'dict')
-        lb_pool_members.update({ip_address: new_member['member']['id']})
-        self._store_data(LB_POOL_MEMBERS_KEY, lb_pool_members)
-
-    def _pop_lb_pool_member(self, ip_address):
-        pop_member = None
-        lb_pool_members = self._get_data(LB_POOL_MEMBERS_KEY, 'dict')
-
-        pop_member = lb_pool_members.get(ip_address)
-        del lb_pool_members[ip_address]
-
-        self._store_data(LB_POOL_MEMBERS_KEY, lb_pool_members)
-        return pop_member
-
-    def _get_conf_properties(self, aws=False):
+    def _get_conf_properties(self):
         instance_id = self.properties.get(self.INSTANCE_ID)
         if instance_id:
             server = self.client_plugin('nova').get_server(instance_id)
@@ -276,190 +203,32 @@ class AWSAutoScalingGroup(aws_asg.AutoScalingGroup):
                                                      instance_props)
             props = function.resolve(conf.properties.data)
         else:
-            conf, props = super(AWSAutoScalingGroup, self)._get_conf_properties()
+            conf, props = super(MultiRegionAutoScalingGroup, self)._get_conf_properties()
 
-        region_one_subnet = self.properties.get(self.SUBNET)
-        props['SubnetId'] = region_one_subnet
-
+        props['SubnetId'] = self.properties.get(self.SUBNET)
         return conf, props
 
-    def _validate_lb_ip_address(self, ip_address):
-        allocated_ips = []
-
-        pool_id = self.properties.get(self.LOADBALANCER_POOL)
-        member_list = self.neutron().list_members(pool_id=pool_id)
-
-        members = member_list.get('members')
-        for member in members:
-            allocated_ips.append(member.get('address'))
-
-        if ip_address in allocated_ips:
-            return False
-        return True
-
-    def refresh_lb_pool_members(self):
-        allocated_ips = []
-        member_ips = []
-
-        for server in grouputils.get_members(self):
-            server_ip = server.FnGetAtt('PublicIp') or server.FnGetAtt('PrivateIp')
-            self.create_lb_pool_member(server_ip)
-            allocated_ips.append(server_ip)
-
-        pool_id = self.properties.get(self.LOADBALANCER_POOL)
-        member_list = self.neutron().list_members(pool_id=pool_id)
-
-        members = member_list.get('members')
-        for member in members:
-            member_ips.append(member.get('address'))
-
-        for ip in member_ips:
-            if not ip in allocated_ips:
-                self.delete_lb_pool_member(ip)
-
-    def create_lb_pool_member(self, ip_address):
-        if not self._validate_lb_ip_address(ip_address):
-            return
-
-        new_member = self.neutron().create_member({
-                                "member": {
-                                    "pool_id": self.properties.get(self.LOADBALANCER_POOL),
-                                    "admin_state_up": True,
-                                    "protocol_port": "80",
-                                    "address": ip_address
-                                }})
-
-        self._add_lb_pool_member(ip_address, new_member)
-
-    def delete_lb_pool_member(self, ip_address):
-        member_id = self._pop_lb_pool_member(ip_address)
-        self.neutron().delete_member(member_id)
-
-    def create_server_instances(self, num_create):
-        instance_props = {
-            'ImageId': self.properties.get(self.AWS_IMAGE_ID),
-            'InstanceType': self.properties.get(self.AWS_INSTANCE_TYPE),
-            'KeyName': self.properties.get(self.AWS_KEY_NAME),
-            'UserData': self.properties.get(self.AWS_USER_DATA),
-            'SubnetId': self.properties.get(self.AWS_SUBNET)
-        }
-
-        security_groups = []
-        for security_group in self.properties.get(self.AWS_SECURITY_GROUP):
-            security_groups.append(security_group)
-
-        interface = boto.ec2.networkinterface.NetworkInterfaceSpecification(subnet_id=instance_props['SubnetId'],
-                                                            groups=security_groups,
-                                                            associate_public_ip_address=True)
-        interfaces = boto.ec2.networkinterface.NetworkInterfaceCollection(interface)
-
-        reservation = self.ec2().run_instances(
-            image_id=instance_props['ImageId'],
-            instance_type=instance_props['InstanceType'],
-            key_name=instance_props['KeyName'],
-            user_data=instance_props['UserData'],
-            network_interfaces=interfaces,
-            max_count=num_create
-        )
-
-        if reservation is not None:
-            for instance in reservation.instances:
-                self._add_server_region_two(instance.id)
-                self.create_lb_pool_member(instance.private_ip_address)
-
-    def delete_server_instances(self, num_create):
-        count = num_create * -1
-
-        LOG.debug('----del_count: %s', count)
-
-        for i in range(count):
-            server_id = self._pop_server_region_two()
-
-            LOG.debug('----server_id: %s', server_id)
-
-            servers = self.ec2().get_only_instances(instance_ids=[server_id])
-            for server in servers:
-                self.delete_lb_pool_member(server.private_ip_address)
-                self.ec2().terminate_instances(instance_ids=[server.id])
-
-    def check_create_complete(self, task):
-        done = super(AWSAutoScalingGroup, self).check_create_complete(task)
-        if done:
-            self.refresh_lb_pool_members()
-        return done
-
-    def check_update_complete(self, cookie):
-        done = super(AWSAutoScalingGroup, self).check_update_complete(cookie)
-        if done:
-            self.refresh_lb_pool_members()
-        return done
-
-    def _resize(self, size_diff):
-        if size_diff > 0:
-            self.create_server_instances(size_diff)
+    def _get_instance_definition(self):
+        if self._is_available_current_region():
+            return super(AWSHybridAutoScalingGroup, self)._get_instance_definition()
         else:
-            self.delete_server_instances(size_diff)
+            instance_props = {
+                'image_id': self.properties.get(self.AWS_IMAGE_ID),
+                'instance_type': self.properties.get(self.AWS_INSTANCE_TYPE),
+                'key_name': self.properties.get(self.AWS_KEY_NAME),
+                'security_groups': [sg for sg in self.properties.get(self.AWS_SECURITY_GROUP)],
+                'user_data': self.properties.get(self.AWS_USER_DATA),
+                'subnet_id': self.properties.get(self.AWS_SUBNET),
+                'aws_access_key_id': self.properties.get(self.AWS_ACCESS_KEY_ID),
+                'aws_secret_access_key': self.properties.get(self.AWS_SECRET_ACCESS_KEY),
+                'aws_region': self.properties.get(self.AWS_REGION_NAME)
+            }
 
-    def resize(self, new_capacity):
-        def _get_size_diff(capacity):
-            old_resources = len(self._get_instance_templates()) \
-                        + self._count_instances_region_two()
-            num_create = capacity - old_resources
-            return num_create
-
-        def _in_region_two(size_diff):
-            if (size_diff > 0 and self._is_available_current_region()) or \
-                    (size_diff <= 0 and self._count_instances_region_two() <= 0):\
-                return False
-            return True
-
-        size_diff = _get_size_diff(new_capacity)
-        if _in_region_two(size_diff):
-            self._resize(size_diff)
-        else:
-            super(AWSAutoScalingGroup, self).resize(new_capacity)
-
-    def validate(self):
-        instanceId = self.properties.get(self.INSTANCE_ID)
-        launch_config = self.properties.get(
-            self.LAUNCH_CONFIGURATION_NAME)
-        if bool(instanceId) == bool(launch_config):
-            msg = _("Either 'InstanceId' or 'LaunchConfigurationName' "
-                    "must be provided.")
-            raise exception.StackValidationFailed(message=msg)
-        return super(AWSAutoScalingGroup, self).validate()
-
-    def _is_available_current_region(self):
-        limits = self.nova().limits.get(reserved=True).absolute
-
-        limits_dict = {}
-        for limit in limits:
-            if limit.value < 0:
-                if limit.name.startswith('total') and limit.name.endswith('Used'):
-                    limits_dict[limit.name] = 0
-                else:
-                    limits_dict[limit.name] = float("inf")
-            else:
-                limits_dict[limit.name] = limit.value
-
-        def is_available_instances(limits):
-            return True if limits['maxTotalInstances'] - limits['totalInstancesUsed'] > 0 else False
-
-        def is_available_cpus(limits):
-            return True if limits['maxTotalCores'] - limits['totalCoresUsed'] > 0 else False
-
-        def is_available_memory(limits):
-            return True if limits['maxTotalRAMSize'] - limits['totalRAMUsed'] > 0 else False
-
-        return is_available_instances(limits_dict) and is_available_cpus(limits_dict) and\
-                    is_available_memory(limits_dict)
-
-    def handle_delete(self):
-        for k, v in self.data().items():
-            self.data_delete(k)
-        super(AWSAutoScalingGroup, self).handle_delete()
+            return rsrc_defn.ResourceDefinition(None,
+                                                'OS::Heat::EC2Instance',
+                                                instance_props)
 
 def resource_mapping():
     return {
-        'OS::Heat::AWSAutoScalingGroup': AWSAutoScalingGroup,
+        'OS::Heat::AWSHybridAutoScalingGroup': AWSHybridAutoScalingGroup,
     }
