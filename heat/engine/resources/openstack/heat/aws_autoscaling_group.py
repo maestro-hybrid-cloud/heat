@@ -31,12 +31,12 @@ class AWSHybridAutoScalingGroup(MultiRegionAutoScalingGroup):
     PROPERTIES = (
         MAX_SIZE, MIN_SIZE, COOLDOWN, DESIRED_CAPACITY, ROLLING_UPDATES,
         LAUNCH_CONFIGURATION_NAME, SUBNET, LOADBALANCER_POOL, INSTANCE_ID,
-        AWS_REGION_NAME, AWS_KEY_NAME, AWS_IMAGE_ID, AWS_INSTANCE_TYPE,
+        AWS_KEY_NAME, AWS_IMAGE_ID, AWS_INSTANCE_TYPE,
         AWS_SECURITY_GROUP, AWS_USER_DATA, AWS_SUBNET
     ) = (
         'max_size', 'min_size', 'cooldown', 'desired_capacity', 'rolling_updates',
         'launch_config_name', 'subnet', 'lb_pool', 'instance_id',
-        'aws_region_name', 'aws_key_name', 'aws_image_id', 'aws_instance_type',
+        'aws_key_name', 'aws_image_id', 'aws_instance_type',
         'aws_security_group', 'aws_user_data', 'aws_subnet'
     )
 
@@ -205,8 +205,7 @@ class AWSHybridAutoScalingGroup(MultiRegionAutoScalingGroup):
                 'key_name': self.properties.get(self.AWS_KEY_NAME),
                 'security_groups': [sg for sg in self.properties.get(self.AWS_SECURITY_GROUP)],
                 'user_data': self.properties.get(self.AWS_USER_DATA),
-                'subnet_id': self.properties.get(self.AWS_SUBNET),
-                'aws_region': self.properties.get(self.AWS_REGION_NAME)
+                'subnet_id': self.properties.get(self.AWS_SUBNET)
             }
 
             return rsrc_defn.ResourceDefinition(None,
