@@ -11,6 +11,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from heat.engine import attributes
 from heat.engine import properties
 from heat.engine.resources.openstack.heat.aws import BotoResource
 
@@ -138,6 +139,12 @@ class VPNConnection(BotoResource):
         'Type', 'StaticRoutesOnly', 'CustomerGatewayId', 'VpnGatewayId'
     )
 
+    ATTRIBUTES = (
+        CUSTOMER_GATEWAY_CONFIGURATION
+    ) = (
+        'CustomerGatewayConfiguration'
+    )
+
     properties_schema = {
         TYPE: properties.Schema(
             properties.Schema.STRING,
@@ -152,6 +159,21 @@ class VPNConnection(BotoResource):
             properties.Schema.STRING,
         ),
     }
+
+    attributes_schema = {
+        CUSTOMER_GATEWAY_CONFIGURATION: attributes.Schema(),
+    }
+
+    def _resolve_attribute(self, name):
+        client = self.vpc()
+
+        customer_gateway_config = None
+
+        if name == self.CUSTOMER_GATEWAY_CONFIGURATION:
+            vpn_conns = client.get_all_vpn_connections(vpn_connection_ids=[self.resource_id])
+            customer_gateway_config = vpn_conns[0].customer_gateway_configuration
+
+        return customer_gateway_config or ''
 
     def handle_create(self):
         client = self.vpc()
