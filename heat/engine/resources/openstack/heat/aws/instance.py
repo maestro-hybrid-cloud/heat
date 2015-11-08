@@ -13,25 +13,24 @@
 
 from oslo_log import log as logging
 
-import boto.ec2
 import boto.ec2.networkinterface
 
 from heat.common import exception
 from heat.common.i18n import _
 from heat.engine import attributes
 from heat.engine import properties
-from heat.engine import resource
+from heat.engine.resources.openstack.heat.aws import BotoResource
 
 LOG = logging.getLogger(__name__)
 
-class EC2Instance(resource.Resource):
+class EC2Instance(BotoResource):
 
     PROPERTIES = (
         IMAGE_ID, INSTANCE_TYPE, KEY_NAME, SECURITY_GROUPS, SUBNET_ID,
-        USER_DATA, AWS_REGION_NAME
+        USER_DATA
     ) = (
         'image_id', 'instance_type', 'key_name', 'security_groups', 'subnet_id',
-        'user_data', 'aws_region'
+        'user_data'
     )
 
     ATTRIBUTES = (
@@ -69,11 +68,6 @@ class EC2Instance(resource.Resource):
             properties.Schema.STRING,
             _('User data to pass to instance.')
         ),
-        AWS_REGION_NAME: properties.Schema(
-            properties.Schema.STRING,
-            _('Region name of the AWS'),
-            update_allowed=True,
-        ),
     }
 
     attributes_schema = {
@@ -85,26 +79,18 @@ class EC2Instance(resource.Resource):
         ),
     }
 
-    def __init__(self, name, json_snippet, stack):
-        super(EC2Instance, self).__init__(name, json_snippet, stack)
-        self._ec2_conn = None
-
-    def ec2(self):
-        if self._ec2_conn is None:
-            self._ec2_conn = boto.ec2.connect_to_region(self.properties.get(self.AWS_REGION_NAME))
-        return self._ec2_conn
-
     def _resolve_attribute(self, name):
         ipaddress = '0.0.0.0'
+        client = self.ec2()
 
         if name == self.PRIVATE_IP:
-            servers = self.ec2().get_only_instances(instance_ids=[self.resource_id])
+            servers = client.get_only_instances(instance_ids=[self.resource_id])
             private_ip_address = servers[0].private_ip_address
             if private_ip_address:
                 ipaddress = private_ip_address
 
         if name == self.PUBLIC_IP:
-            servers = self.ec2().get_only_instances(instance_ids=[self.resource_id])
+            servers = client.get_only_instances(instance_ids=[self.resource_id])
             public_ip_address = servers[0].public_ip_address
             if public_ip_address:
                 ipaddress = public_ip_address
@@ -112,6 +98,8 @@ class EC2Instance(resource.Resource):
         return ipaddress
 
     def handle_create(self):
+        client = self.ec2()
+
         userdata = self.properties.get(self.USER_DATA) or ''
         flavor = self.properties[self.INSTANCE_TYPE]
         image_name = self.properties[self.IMAGE_ID]
@@ -127,14 +115,14 @@ class EC2Instance(resource.Resource):
                                                         associate_public_ip_address=True)
             interfaces = boto.ec2.networkinterface.NetworkInterfaceCollection(interface)
 
-            reservation = self.ec2().run_instances(
+            reservation = client.run_instances(
                         image_id=image_name,
                         instance_type=flavor,
                         key_name=self.properties[self.KEY_NAME],
                         user_data=userdata,
                         network_interfaces=interfaces)
         else:
-            reservation = self.ec2().run_instances(
+            reservation = client.run_instances(
                         image_id=image_name,
                         instance_type=flavor,
                         key_name=self.properties[self.KEY_NAME],
