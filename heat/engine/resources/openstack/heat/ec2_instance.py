@@ -27,13 +27,11 @@ LOG = logging.getLogger(__name__)
 class EC2Instance(resource.Resource, sh.SchedulerHintsMixin):
 
     PROPERTIES = (
-        IMAGE_ID, INSTANCE_TYPE, KEY_NAME,
-        SECURITY_GROUPS, SUBNET_ID,
-        USER_DATA,
-        AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION_NAME
+        IMAGE_ID, INSTANCE_TYPE, KEY_NAME, SECURITY_GROUPS, SUBNET_ID,
+        USER_DATA, AWS_REGION_NAME
     ) = (
         'image_id', 'instance_type', 'key_name', 'security_groups', 'subnet_id',
-        'user_data', 'aws_access_key_id', 'aws_secret_access_key', 'aws_region'
+        'user_data', 'aws_region'
     )
 
     ATTRIBUTES = (
@@ -48,8 +46,6 @@ class EC2Instance(resource.Resource, sh.SchedulerHintsMixin):
             _('Image ID or name.'),
             required=True
         ),
-        # AWS does not require InstanceType but Heat does because the nova
-        # create api call requires a flavor
         INSTANCE_TYPE: properties.Schema(
             properties.Schema.STRING,
             _('Instance type (flavor).'),
@@ -72,16 +68,6 @@ class EC2Instance(resource.Resource, sh.SchedulerHintsMixin):
         USER_DATA: properties.Schema(
             properties.Schema.STRING,
             _('User data to pass to instance.')
-        ),
-        AWS_ACCESS_KEY_ID: properties.Schema(
-            properties.Schema.STRING,
-            _('Access key ID of the AWS'),
-            update_allowed=True,
-        ),
-        AWS_SECRET_ACCESS_KEY: properties.Schema(
-            properties.Schema.STRING,
-            _('Secret access key of the AWS'),
-            update_allowed=True,
         ),
         AWS_REGION_NAME: properties.Schema(
             properties.Schema.STRING,
@@ -106,20 +92,8 @@ class EC2Instance(resource.Resource, sh.SchedulerHintsMixin):
 
     def ec2(self):
         if self._ec2_conn is None:
-            self._ec2_conn = boto.ec2.connect_to_region(self.properties.get(self.AWS_REGION_NAME),
-                aws_access_key_id=self.properties.get(self.AWS_ACCESS_KEY_ID),
-                aws_secret_access_key=self.properties.get(self.AWS_SECRET_ACCESS_KEY))
+            self._ec2_conn = boto.ec2.connect_to_region(self.properties.get(self.AWS_REGION_NAME))
         return self._ec2_conn
-
-    def validate(self):
-        aws_region_name = self.properties.get(self.AWS_REGION_NAME)
-        aws_access_key_id = self.properties.get(self.AWS_ACCESS_KEY_ID)
-        aws_secret_access_key = self.properties.get(self.AWS_SECRET_ACCESS_KEY)
-
-        if not (aws_region_name and aws_access_key_id and aws_secret_access_key):
-            raise ValueError(_('Required AWS account information for using AWS SDK!'))
-
-        super(EC2Instance, self).validate()
 
     def _resolve_attribute(self, name):
         if name == self.PRIVATE_IP:

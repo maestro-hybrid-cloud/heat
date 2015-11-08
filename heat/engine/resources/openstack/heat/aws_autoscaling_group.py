@@ -31,15 +31,13 @@ class AWSHybridAutoScalingGroup(MultiRegionAutoScalingGroup):
     PROPERTIES = (
         MAX_SIZE, MIN_SIZE, COOLDOWN, DESIRED_CAPACITY, ROLLING_UPDATES,
         LAUNCH_CONFIGURATION_NAME, SUBNET, LOADBALANCER_POOL, INSTANCE_ID,
-        AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION_NAME,
-        AWS_KEY_NAME, AWS_IMAGE_ID, AWS_INSTANCE_TYPE, AWS_SECURITY_GROUP, AWS_USER_DATA,
-        AWS_SUBNET
+        AWS_REGION_NAME, AWS_KEY_NAME, AWS_IMAGE_ID, AWS_INSTANCE_TYPE,
+        AWS_SECURITY_GROUP, AWS_USER_DATA, AWS_SUBNET
     ) = (
         'max_size', 'min_size', 'cooldown', 'desired_capacity',
         'rolling_updates', 'launch_config_name', 'subnet', 'lb_pool', 'instance_id',
-        'aws_access_key_id', 'aws_secret_access_key', 'aws_region_name',
-        'aws_key_name', 'aws_image_id', 'aws_instance_type', 'aws_security_group',
-        'aws_user_data', 'aws_subnet'
+        'aws_region_name', 'aws_key_name', 'aws_image_id', 'aws_instance_type',
+        'aws_security_group', 'aws_user_data', 'aws_subnet'
     )
 
     _ROLLING_UPDATES_SCHEMA = (
@@ -103,7 +101,6 @@ class AWSHybridAutoScalingGroup(MultiRegionAutoScalingGroup):
                     constraints=[constraints.Range(min=0)],
                     default=0),
             },
-            # A default policy has all fields with their own default values.
             default={
                 MIN_IN_SERVICE: 0,
                 MAX_BATCH_SIZE: 1,
@@ -131,16 +128,6 @@ class AWSHybridAutoScalingGroup(MultiRegionAutoScalingGroup):
               'create the Auto Scaling group. If specify this property, '
               'will create the group use an existing instance instead of '
               'a launch configuration.'),
-            update_allowed=True,
-        ),
-        AWS_ACCESS_KEY_ID: properties.Schema(
-            properties.Schema.STRING,
-            _('Access key ID of the AWS'),
-            update_allowed=True,
-        ),
-        AWS_SECRET_ACCESS_KEY: properties.Schema(
-            properties.Schema.STRING,
-            _('Secret access key of the AWS'),
             update_allowed=True,
         ),
         AWS_REGION_NAME: properties.Schema(
@@ -219,8 +206,6 @@ class AWSHybridAutoScalingGroup(MultiRegionAutoScalingGroup):
                 'security_groups': [sg for sg in self.properties.get(self.AWS_SECURITY_GROUP)],
                 'user_data': self.properties.get(self.AWS_USER_DATA),
                 'subnet_id': self.properties.get(self.AWS_SUBNET),
-                'aws_access_key_id': self.properties.get(self.AWS_ACCESS_KEY_ID),
-                'aws_secret_access_key': self.properties.get(self.AWS_SECRET_ACCESS_KEY),
                 'aws_region': self.properties.get(self.AWS_REGION_NAME)
             }
 
