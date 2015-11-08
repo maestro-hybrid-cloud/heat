@@ -21,11 +21,10 @@ from heat.common.i18n import _
 from heat.engine import attributes
 from heat.engine import properties
 from heat.engine import resource
-from heat.engine.resources import scheduler_hints as sh
 
 LOG = logging.getLogger(__name__)
 
-class EC2Instance(resource.Resource, sh.SchedulerHintsMixin):
+class EC2Instance(resource.Resource):
 
     PROPERTIES = (
         IMAGE_ID, INSTANCE_TYPE, KEY_NAME, SECURITY_GROUPS, SUBNET_ID,
