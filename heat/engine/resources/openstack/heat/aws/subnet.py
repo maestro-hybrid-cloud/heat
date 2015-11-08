@@ -77,8 +77,6 @@ class Subnet(BotoResource):
         ),
     }
 
-    default_client_name = 'neutron'
-
     def handle_create(self):
         client = self.vpc()
 

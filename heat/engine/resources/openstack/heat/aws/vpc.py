@@ -76,7 +76,7 @@ class VPC(BotoResource):
         vpcs = self.vpc().get_all_vpcs(vpc_ids=[self.resource_id])
         if vpcs and len(vpcs) > 0:
             status = vpcs[0].state
-            if status == 'running':
+            if status == 'available':
                 return True
         return False
 

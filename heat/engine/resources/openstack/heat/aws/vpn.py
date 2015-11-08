@@ -193,7 +193,7 @@ class VPNConnection(BotoResource):
         vpn_conns = self.vpc().get_all_vpn_connections(vpn_connection_ids=[self.resource_id])
         if vpn_conns and len(vpn_conns) > 0:
             status = vpn_conns[0].state
-            if status == 'running':
+            if status == 'available':
                 return True
         return False
 
