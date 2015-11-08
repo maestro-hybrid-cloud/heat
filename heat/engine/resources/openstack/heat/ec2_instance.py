@@ -12,6 +12,7 @@
 #    under the License.
 
 from oslo_log import log as logging
+
 import boto.ec2
 import boto.ec2.networkinterface
 
@@ -88,7 +89,6 @@ class EC2Instance(resource.Resource, sh.SchedulerHintsMixin):
     def __init__(self, name, json_snippet, stack):
         super(EC2Instance, self).__init__(name, json_snippet, stack)
         self._ec2_conn = None
-        self.ipaddress = None
 
     def ec2(self):
         if self._ec2_conn is None:
@@ -96,41 +96,54 @@ class EC2Instance(resource.Resource, sh.SchedulerHintsMixin):
         return self._ec2_conn
 
     def _resolve_attribute(self, name):
+        ipaddress = '0.0.0.0'
+
         if name == self.PRIVATE_IP:
             servers = self.ec2().get_only_instances(instance_ids=[self.resource_id])
-            self.ipaddress = servers[0].private_ip_address
-            return self.ipaddress or '0.0.0.0'
+            private_ip_address = servers[0].private_ip_address
+            if private_ip_address:
+                ipaddress = private_ip_address
 
         if name == self.PUBLIC_IP:
             servers = self.ec2().get_only_instances(instance_ids=[self.resource_id])
-            self.ipaddress = servers[0].public_ip_address
-            return self.ipaddress or '0.0.0.0'
+            public_ip_address = servers[0].public_ip_address
+            if public_ip_address:
+                ipaddress = public_ip_address
+
+        return ipaddress
 
     def handle_create(self):
-        userdata = self.properties[self.USER_DATA] or ''
+        userdata = self.properties.get(self.USER_DATA) or ''
         flavor = self.properties[self.INSTANCE_TYPE]
         image_name = self.properties[self.IMAGE_ID]
         subnet_id = self.properties.get(self.SUBNET_ID)
         security_groups = self.properties.get(self.SECURITY_GROUPS)
 
-        interface = boto.ec2.networkinterface.NetworkInterfaceSpecification(
-                                                    subnet_id=subnet_id,
-                                                    groups=security_groups,
-                                                    associate_public_ip_address=True)
-        interfaces = boto.ec2.networkinterface.NetworkInterfaceCollection(interface)
-
         reservation = None
-        try:
+
+        if subnet_id and security_groups:
+            interface = boto.ec2.networkinterface.NetworkInterfaceSpecification(
+                                                        subnet_id=subnet_id,
+                                                        groups=security_groups,
+                                                        associate_public_ip_address=True)
+            interfaces = boto.ec2.networkinterface.NetworkInterfaceCollection(interface)
+
             reservation = self.ec2().run_instances(
                         image_id=image_name,
                         instance_type=flavor,
                         key_name=self.properties[self.KEY_NAME],
                         user_data=userdata,
                         network_interfaces=interfaces)
-        finally:
-            if reservation is not None:
-                for instance in reservation.instances:
-                    self.resource_id_set(instance.id)
+        else:
+            reservation = self.ec2().run_instances(
+                        image_id=image_name,
+                        instance_type=flavor,
+                        key_name=self.properties[self.KEY_NAME],
+                        user_data=userdata)
+
+        if reservation is not None:
+            for instance in reservation.instances:
+                self.resource_id_set(instance.id)
 
     def check_create_complete(self, cookie):
         return (self._check_active(self.resource_id))
