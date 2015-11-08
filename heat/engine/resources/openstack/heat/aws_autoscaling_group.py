@@ -34,8 +34,8 @@ class AWSHybridAutoScalingGroup(MultiRegionAutoScalingGroup):
         AWS_REGION_NAME, AWS_KEY_NAME, AWS_IMAGE_ID, AWS_INSTANCE_TYPE,
         AWS_SECURITY_GROUP, AWS_USER_DATA, AWS_SUBNET
     ) = (
-        'max_size', 'min_size', 'cooldown', 'desired_capacity',
-        'rolling_updates', 'launch_config_name', 'subnet', 'lb_pool', 'instance_id',
+        'max_size', 'min_size', 'cooldown', 'desired_capacity', 'rolling_updates',
+        'launch_config_name', 'subnet', 'lb_pool', 'instance_id',
         'aws_region_name', 'aws_key_name', 'aws_image_id', 'aws_instance_type',
         'aws_security_group', 'aws_user_data', 'aws_subnet'
     )
@@ -137,7 +137,7 @@ class AWSHybridAutoScalingGroup(MultiRegionAutoScalingGroup):
         ),
         AWS_KEY_NAME: properties.Schema(
             properties.Schema.STRING,
-            _('The reference to a LaunchConfiguration resource for AWS.'),
+            _('The reference to a LaunchConfiguration resource for AWS'),
             update_allowed=True,
         ),
         AWS_IMAGE_ID: properties.Schema(

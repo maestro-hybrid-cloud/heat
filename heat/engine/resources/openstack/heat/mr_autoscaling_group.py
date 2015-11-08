@@ -50,13 +50,12 @@ class MultiRegionAutoScalingGroup(aws_asg.AutoScalingGroup):
 
     PROPERTIES = (
         MAX_SIZE, MIN_SIZE, COOLDOWN, DESIRED_CAPACITY, ROLLING_UPDATES,
-        LAUNCH_CONFIGURATION_NAME, REGION_ONE_SUBNET, REGION_TWO_SUBNET, REGION_TWO_NAME,
-        LOADBALANCER_POOL, INSTANCE_ID
+        LAUNCH_CONFIGURATION_NAME, REGION_ONE_SUBNET, REGION_TWO_SUBNET,
+        REGION_TWO_NAME, LOADBALANCER_POOL, INSTANCE_ID
     ) = (
-        'max_size', 'min_size', 'cooldown', 'desired_capacity',
-        'rolling_updates',
-        'launch_config_name', 'subnet_region_one', 'subnet_region_two', 'region_two_name',
-        'lb_pool', 'instance_id'
+        'max_size', 'min_size', 'cooldown', 'desired_capacity', 'rolling_updates',
+        'launch_config_name', 'subnet_region_one', 'subnet_region_two',
+        'region_two_name', 'lb_pool', 'instance_id'
     )
 
     _ROLLING_UPDATES_SCHEMA = (
@@ -120,7 +119,6 @@ class MultiRegionAutoScalingGroup(aws_asg.AutoScalingGroup):
                     constraints=[constraints.Range(min=0)],
                     default=0),
             },
-            # A default policy has all fields with their own default values.
             default={
                 MIN_IN_SERVICE: 0,
                 MAX_BATCH_SIZE: 1,
@@ -144,7 +142,7 @@ class MultiRegionAutoScalingGroup(aws_asg.AutoScalingGroup):
         ),
         REGION_TWO_NAME: properties.Schema(
             properties.Schema.STRING,
-            _('Name of the RegionTwo.'),
+            _('Name of the RegionTwo'),
             update_allowed=True,
         ),
         INSTANCE_ID: properties.Schema(
