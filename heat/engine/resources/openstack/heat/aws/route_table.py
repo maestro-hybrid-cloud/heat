@@ -160,13 +160,8 @@ class Route(BotoResource):
 
         route_table = self.properties.get(self.ROUTE_TABLE_ID)
         destination_cidr_block = self.properties.get(self.DESTINATION_CIDR_BLOCK)
-        gateway = self.properties.get(self.GATEWAY_ID)
-        instance_id = self.properties.get(self.INSTANCE_ID)
-        interface_id = self.properties.get(self.INTERFACE_ID)
-        vpc_peering_connection = self.properties.get(self.VPC_PEERING_CONNECTION_ID)
 
-        client.delete_route(route_table, destination_cidr_block, gateway,
-                                    instance_id, interface_id, vpc_peering_connection)
+        client.delete_route(route_table, destination_cidr_block)
 
 def resource_mapping():
     return {
