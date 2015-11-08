@@ -137,11 +137,10 @@ class EC2Instance(resource.Resource, sh.SchedulerHintsMixin):
 
     def _check_active(self, server_id):
         instances = self.ec2().get_only_instances(instance_ids=[server_id])
-        if instances:
-            for instance in instances:
-                status = instance.state
-                if status == 'running':
-                    return True
+        if instances and len(instances) > 0:
+            status = instances[0].state
+            if status == 'running':
+                return True
         return False
 
     def handle_check(self):
