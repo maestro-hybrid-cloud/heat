@@ -12,7 +12,6 @@
 #    under the License.
 
 from heat.common.i18n import _
-from heat.engine import constraints
 from heat.engine import properties
 from heat.engine.resources.openstack.heat.aws import BotoResource
 from heat.engine import support
@@ -91,9 +90,6 @@ class SubnetRouteTableAssociation(BotoResource):
             properties.Schema.STRING,
             _('Subnet ID.'),
             required=True,
-            constraints=[
-                constraints.CustomConstraint('neutron.subnet')
-            ]
         ),
     }
 
