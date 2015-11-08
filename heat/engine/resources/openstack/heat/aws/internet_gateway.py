@@ -100,6 +100,15 @@ class VPCGatewayAttachment(BotoResource):
         if vpn_gateway:
             client.attach_vpn_gateway(vpn_gateway, vpc)
 
+    def check_create_complete(self, *args):
+        vpn_gateway_id = self.properties.get(self.VPN_GATEWAY_ID)
+        vpn_gateways = self.vpc().get_all_vpn_gateways(vpn_connection_ids=[vpn_gateway_id])
+        if vpn_gateways and len(vpn_gateways) > 0:
+            status = vpn_gateways[0].state
+            if status == 'attached':
+                return True
+        return False
+
     def handle_delete(self):
         client = self.vpc()
 
