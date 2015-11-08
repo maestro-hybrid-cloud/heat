@@ -130,11 +130,6 @@ class AWSHybridAutoScalingGroup(MultiRegionAutoScalingGroup):
               'a launch configuration.'),
             update_allowed=True,
         ),
-        AWS_REGION_NAME: properties.Schema(
-            properties.Schema.STRING,
-            _('Region name of the AWS'),
-            update_allowed=True,
-        ),
         AWS_KEY_NAME: properties.Schema(
             properties.Schema.STRING,
             _('The reference to a LaunchConfiguration resource for AWS'),
