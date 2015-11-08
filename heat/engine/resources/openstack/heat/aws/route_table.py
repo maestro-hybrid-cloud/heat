@@ -111,8 +111,66 @@ class SubnetRouteTableAssociation(BotoResource):
         client = self.vpc()
         client.disassociate_route_table(self.resource_id)
 
+class Route(BotoResource):
+
+    PROPERTIES = (
+        ROUTE_TABLE_ID, DESTINATION_CIDR_BLOCK, GATEWAY_ID, INSTANCE_ID,
+        INTERFACE_ID, VPC_PEERING_CONNECTION_ID
+    ) = (
+        'RouteTableId', 'DestinationCidrBlock', 'GatewayId', 'InstanceId',
+        'InterfaceId', 'VpcPeeringConnectionId'
+    )
+
+    properties_schema = {
+        ROUTE_TABLE_ID: properties.Schema(
+            properties.Schema.STRING,
+        ),
+        DESTINATION_CIDR_BLOCK: properties.Schema(
+            properties.Schema.STRING,
+        ),
+        GATEWAY_ID: properties.Schema(
+            properties.Schema.STRING,
+        ),
+        INSTANCE_ID: properties.Schema(
+            properties.Schema.STRING,
+        ),
+        INTERFACE_ID: properties.Schema(
+            properties.Schema.STRING,
+        ),
+        VPC_PEERING_CONNECTION_ID: properties.Schema(
+            properties.Schema.STRING,
+        ),
+    }
+
+    def handle_create(self):
+        client = self.vpc()
+
+        route_table = self.properties.get(self.ROUTE_TABLE_ID)
+        destination_cidr_block = self.properties.get(self.DESTINATION_CIDR_BLOCK)
+        gateway = self.properties.get(self.GATEWAY_ID)
+        instance_id = self.properties.get(self.INSTANCE_ID)
+        interface_id = self.properties.get(self.INTERFACE_ID)
+        vpc_peering_connection = self.properties.get(self.VPC_PEERING_CONNECTION_ID)
+
+        client.create_route(route_table, destination_cidr_block, gateway,
+                                    instance_id, interface_id, vpc_peering_connection)
+
+    def handle_delete(self):
+        client = self.vpc()
+
+        route_table = self.properties.get(self.ROUTE_TABLE_ID)
+        destination_cidr_block = self.properties.get(self.DESTINATION_CIDR_BLOCK)
+        gateway = self.properties.get(self.GATEWAY_ID)
+        instance_id = self.properties.get(self.INSTANCE_ID)
+        interface_id = self.properties.get(self.INTERFACE_ID)
+        vpc_peering_connection = self.properties.get(self.VPC_PEERING_CONNECTION_ID)
+
+        client.delete_route(route_table, destination_cidr_block, gateway,
+                                    instance_id, interface_id, vpc_peering_connection)
+
 def resource_mapping():
     return {
         'OS::Heat::RouteTable': RouteTable,
         'OS::Heat::SubnetRouteTableAssociation': SubnetRouteTableAssociation,
+        'OS::Heat::Route': Route,
     }
