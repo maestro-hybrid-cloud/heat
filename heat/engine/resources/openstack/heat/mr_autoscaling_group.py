@@ -211,11 +211,13 @@ class MultiRegionAutoScalingGroup(aws_asg.AutoScalingGroup):
             conf, props = super(MultiRegionAutoScalingGroup, self)._get_conf_properties()
 
         region_one_subnet = self.properties.get(self.REGION_ONE_SUBNET)
-        props['SubnetId'] = region_one_subnet
+        if region_one_subnet:
+            props['SubnetId'] = region_one_subnet
 
         if region_two:
             region_two_subnet = self.properties.get(self.REGION_TWO_SUBNET)
-            props['SubnetId'] = region_two_subnet
+            if region_two_subnet:
+                props['SubnetId'] = region_two_subnet
 
         return conf, props
 

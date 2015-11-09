@@ -19,7 +19,6 @@ from heat.common import grouputils
 from heat.common.i18n import _
 from heat.engine import attributes
 from heat.engine import constraints
-from heat.engine import function
 from heat.engine import properties
 from heat.engine import rsrc_defn
 from heat.engine.resources.openstack.heat.mr_autoscaling_group import MultiRegionAutoScalingGroup
@@ -170,32 +169,17 @@ class AWSHybridAutoScalingGroup(MultiRegionAutoScalingGroup):
     }
 
     def _get_conf_properties(self):
-        instance_id = self.properties.get(self.INSTANCE_ID)
-        if instance_id:
-            server = self.client_plugin('nova').get_server(instance_id)
-            instance_props = {
-                'ImageId': server.image['id'],
-                'InstanceType': server.flavor['id'],
-                'KeyName': server.key_name,
-                'SecurityGroups': [sg['name']
-                                   for sg in server.security_groups],
-                'UserData': server.user_data
-            }
-            conf = self._make_launch_config_resource(self.name,
-                                                     instance_props)
-            props = function.resolve(conf.properties.data)
-        else:
-            conf, props = super(MultiRegionAutoScalingGroup, self)._get_conf_properties()
-
+        conf, props = super(AWSHybridAutoScalingGroup, self)._get_conf_properties()
         props['SubnetId'] = self.properties.get(self.SUBNET)
+
         return conf, props
 
     def _get_instance_definition(self):
-        conf, props = super(AWSHybridAutoScalingGroup, self)._get_instance_definition()
-
         if self._is_available_current_region():
-            return conf, props
+            return super(AWSHybridAutoScalingGroup, self)._get_instance_definition()
         else:
+            conf, props = self._get_conf_properties()
+
             instance_props = {
                 'image_id': self.properties.get(self.AWS_IMAGE_ID),
                 'instance_type': self.properties.get(self.AWS_INSTANCE_TYPE),
@@ -204,6 +188,7 @@ class AWSHybridAutoScalingGroup(MultiRegionAutoScalingGroup):
                 'user_data': self.properties.get(self.AWS_USER_DATA),
                 'subnet_id': self.properties.get(self.AWS_SUBNET)
             }
+
             return rsrc_defn.ResourceDefinition(None,
                                                 'OS::Heat::EC2Instance',
                                                 instance_props,
