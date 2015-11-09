@@ -31,7 +31,7 @@ from heat.engine import function
 from heat.engine import properties
 from heat.engine import rsrc_defn
 from heat.engine.resources.aws.autoscaling import autoscaling_group as aws_asg
-from heat.engine.resources.aws.autoscaling.autoscaling_group import _calculate_new_capacity
+from heat.engine.resources.aws.autoscaling.autoscaling_group import _calculate_new_capacity, AutoScalingGroup
 from heat.scaling import template
 from heat.engine import template as engine_template
 from heat.engine.notification import autoscaling as notification
@@ -208,7 +208,7 @@ class MultiRegionAutoScalingGroup(aws_asg.AutoScalingGroup):
                                                      instance_props)
             props = function.resolve(conf.properties.data)
         else:
-            conf, props = super(MultiRegionAutoScalingGroup, self)._get_conf_properties()
+            conf, props = super(AutoScalingGroup, self)._get_conf_properties()
 
         region_one_subnet = self.properties.get(self.REGION_ONE_SUBNET)
         if region_one_subnet:
