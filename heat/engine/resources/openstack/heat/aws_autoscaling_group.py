@@ -191,8 +191,10 @@ class AWSHybridAutoScalingGroup(MultiRegionAutoScalingGroup):
         return conf, props
 
     def _get_instance_definition(self):
+        conf, props = super(AWSHybridAutoScalingGroup, self)._get_instance_definition()
+
         if self._is_available_current_region():
-            return super(AWSHybridAutoScalingGroup, self)._get_instance_definition()
+            return conf, props
         else:
             instance_props = {
                 'image_id': self.properties.get(self.AWS_IMAGE_ID),
@@ -202,10 +204,10 @@ class AWSHybridAutoScalingGroup(MultiRegionAutoScalingGroup):
                 'user_data': self.properties.get(self.AWS_USER_DATA),
                 'subnet_id': self.properties.get(self.AWS_SUBNET)
             }
-
             return rsrc_defn.ResourceDefinition(None,
                                                 'OS::Heat::EC2Instance',
-                                                instance_props)
+                                                instance_props,
+                                                conf.t.metadata())
 
     def _get_instances_count(self):
         if self.nested():
