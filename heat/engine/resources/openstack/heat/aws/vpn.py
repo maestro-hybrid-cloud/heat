@@ -11,6 +11,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import xml.etree.ElementTree as ET
+
 from heat.engine import attributes
 from heat.engine import properties
 from heat.engine.resources.openstack.heat.aws import BotoResource
@@ -140,9 +142,9 @@ class VPNConnection(BotoResource):
     )
 
     ATTRIBUTES = (
-        CUSTOMER_GATEWAY_CONFIGURATION
+        CUSTOMER_GATEWAY_CONFIGURATION, VPN_GATEWAY_IP_ADDRESS, IKE_PSK
     ) = (
-        'CustomerGatewayConfiguration'
+        'CustomerGatewayConfiguration', 'VPNGatewayIPAddress', 'IKEPSK'
     )
 
     properties_schema = {
@@ -162,18 +164,39 @@ class VPNConnection(BotoResource):
 
     attributes_schema = {
         CUSTOMER_GATEWAY_CONFIGURATION: attributes.Schema(),
+        VPN_GATEWAY_IP_ADDRESS: attributes.Schema(),
+        IKE_PSK: attributes.Schema(),
     }
 
     def _resolve_attribute(self, name):
         client = self.vpc()
 
-        customer_gateway_config = None
+        vpn_conns = client.get_all_vpn_connections(vpn_connection_ids=[self.resource_id])
+        customer_gateway_config = vpn_conns[0].customer_gateway_configuration
 
         if name == self.CUSTOMER_GATEWAY_CONFIGURATION:
-            vpn_conns = client.get_all_vpn_connections(vpn_connection_ids=[self.resource_id])
-            customer_gateway_config = vpn_conns[0].customer_gateway_configuration
+            return customer_gateway_config or ''
 
-        return customer_gateway_config or ''
+        xml_header = '<?xml version="1.0" encoding="UTF-8"?> '
+        customer_gateway_config = customer_gateway_config.replace(xml_header, '')
+
+        parsed_customer_gateway_config = ET.fromstring(customer_gateway_config)
+        ipsec_tunnel_tag = parsed_customer_gateway_config.find('ipsec_tunnel')
+
+        if name == self.IKE_PSK:
+            ike_tag = ipsec_tunnel_tag.find('ike')
+            pre_shared_key_tag = ike_tag.find('pre_shared_key')
+            ike_psk = pre_shared_key_tag.text
+
+            return ike_psk
+
+        if name == self.VPN_GATEWAY_IP_ADDRESS:
+            vpn_gateway_tag = ipsec_tunnel_tag.find('vpn_gateway')
+            tunnel_outside_address_tag = vpn_gateway_tag.find('tunnel_outside_address')
+            ip_address_tag = tunnel_outside_address_tag.find('ip_address')
+            vpn_gateway_ip_address = ip_address_tag.text
+
+            return vpn_gateway_ip_address
 
     def handle_create(self):
         client = self.vpc()
