@@ -184,10 +184,13 @@ class AWSHybridAutoScalingGroup(MultiRegionAutoScalingGroup):
                 'image_id': self.properties.get(self.AWS_IMAGE_ID),
                 'instance_type': self.properties.get(self.AWS_INSTANCE_TYPE),
                 'key_name': self.properties.get(self.AWS_KEY_NAME),
-                'security_groups': [sg for sg in self.properties.get(self.AWS_SECURITY_GROUP)],
                 'user_data': self.properties.get(self.AWS_USER_DATA),
                 'subnet_id': self.properties.get(self.AWS_SUBNET)
             }
+
+            security_groups = self.properties.get(self.AWS_SECURITY_GROUP)
+            if security_groups:
+                instance_props['security_groups'] = [sg for sg in security_groups]
 
             return rsrc_defn.ResourceDefinition(None,
                                                 'OS::Heat::EC2Instance',
