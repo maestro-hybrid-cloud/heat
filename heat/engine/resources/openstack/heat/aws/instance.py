@@ -27,10 +27,10 @@ class EC2Instance(BotoResource):
 
     PROPERTIES = (
         IMAGE_ID, INSTANCE_TYPE, KEY_NAME, SECURITY_GROUPS, SUBNET_ID,
-        USER_DATA
+        USER_DATA, MONITORING
     ) = (
         'image_id', 'instance_type', 'key_name', 'security_groups', 'subnet_id',
-        'user_data'
+        'user_data', 'monitoring'
     )
 
     ATTRIBUTES = (
@@ -67,6 +67,11 @@ class EC2Instance(BotoResource):
         USER_DATA: properties.Schema(
             properties.Schema.STRING,
             _('User data to pass to instance.')
+        ),
+        MONITORING: properties.Schema(
+            properties.Schema.BOOLEAN,
+            _('Enable detailed CloudWatch monitoring on the instance.'),
+            default=False
         ),
     }
 
@@ -105,6 +110,7 @@ class EC2Instance(BotoResource):
         image_name = self.properties[self.IMAGE_ID]
         subnet_id = self.properties.get(self.SUBNET_ID)
         security_groups = self.properties.get(self.SECURITY_GROUPS)
+        monitoring = self.properties.get(self.MONITORING)
 
         reservation = None
 
@@ -120,13 +126,15 @@ class EC2Instance(BotoResource):
                         instance_type=flavor,
                         key_name=self.properties[self.KEY_NAME],
                         user_data=userdata,
-                        network_interfaces=interfaces)
+                        network_interfaces=interfaces,
+                        monitoring_enabled=monitoring)
         else:
             reservation = client.run_instances(
                         image_id=image_name,
                         instance_type=flavor,
                         key_name=self.properties[self.KEY_NAME],
-                        user_data=userdata)
+                        user_data=userdata,
+                        monitoring_enabled=monitoring)
 
         if reservation is not None:
             for instance in reservation.instances:

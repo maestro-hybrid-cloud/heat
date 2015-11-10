@@ -185,7 +185,8 @@ class AWSHybridAutoScalingGroup(MultiRegionAutoScalingGroup):
                 'instance_type': self.properties.get(self.AWS_INSTANCE_TYPE),
                 'key_name': self.properties.get(self.AWS_KEY_NAME),
                 'user_data': self.properties.get(self.AWS_USER_DATA),
-                'subnet_id': self.properties.get(self.AWS_SUBNET)
+                'subnet_id': self.properties.get(self.AWS_SUBNET),
+                'monitoring': True
             }
 
             security_groups = self.properties.get(self.AWS_SECURITY_GROUP)
