@@ -27,10 +27,16 @@ class EC2Instance(BotoResource):
 
     PROPERTIES = (
         IMAGE_ID, INSTANCE_TYPE, KEY_NAME, SECURITY_GROUPS, SUBNET_ID,
-        USER_DATA, MONITORING
+        USER_DATA, MONITORING, TAGS
     ) = (
         'image_id', 'instance_type', 'key_name', 'security_groups', 'subnet_id',
-        'user_data', 'monitoring'
+        'user_data', 'monitoring', 'Tags'
+    )
+
+    _TAG_KEYS = (
+        TAG_KEY, TAG_VALUE,
+    ) = (
+        'Key', 'Value',
     )
 
     ATTRIBUTES = (
@@ -73,6 +79,24 @@ class EC2Instance(BotoResource):
             _('Enable detailed CloudWatch monitoring on the instance.'),
             default=False
         ),
+        TAGS: properties.Schema(
+            properties.Schema.LIST,
+            _('Tags to attach to instance.'),
+            schema=properties.Schema(
+                properties.Schema.MAP,
+                schema={
+                    TAG_KEY: properties.Schema(
+                        properties.Schema.STRING,
+                        required=True
+                    ),
+                    TAG_VALUE: properties.Schema(
+                        properties.Schema.STRING,
+                        required=True
+                    ),
+                },
+            ),
+            update_allowed=True
+        ),
     }
 
     attributes_schema = {
@@ -102,7 +126,18 @@ class EC2Instance(BotoResource):
 
         return ipaddress
 
+    def _get_instance_metadata(self, properties):
+        if properties is None or properties.get(self.TAGS) is None:
+            return None
+
+        return dict((tm[self.TAG_KEY], tm[self.TAG_VALUE])
+                    for tm in properties[self.TAGS])
+
     def handle_create(self):
+
+        instance_metadata  = self._get_instance_metadata(self.properties)
+        self.metadata_set(instance_metadata)
+
         client = self.ec2()
 
         userdata = self.properties.get(self.USER_DATA) or ''
@@ -114,7 +149,7 @@ class EC2Instance(BotoResource):
 
         reservation = None
 
-        if subnet_id and security_groups:
+        if subnet_id:
             interface = boto.ec2.networkinterface.NetworkInterfaceSpecification(
                                                         subnet_id=subnet_id,
                                                         groups=security_groups,
@@ -154,6 +189,14 @@ class EC2Instance(BotoResource):
     def handle_check(self):
         if not self._check_active(self.resource_id):
             raise exception.Error(_("Instance is not running"))
+
+    def handle_update(self, json_snippet, tmpl_diff, prop_diff):
+        if 'Metadata' in tmpl_diff:
+            self.metadata_set(tmpl_diff['Metadata'])
+
+    def metadata_update(self, new_metadata=None):
+        if new_metadata is None:
+            self.metadata_set(self.t.metadata())
 
     def handle_delete(self):
         if self.resource_id is None:
