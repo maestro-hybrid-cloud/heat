@@ -195,7 +195,7 @@ class AWSHybridAutoScalingGroup(MultiRegionAutoScalingGroup):
                 instance_props['security_groups'] = [sg for sg in security_groups]
 
             return rsrc_defn.ResourceDefinition(None,
-                                                'OS::Heat::EC2Instance',
+                                                'AWS::VPC::EC2Instance',
                                                 instance_props,
                                                 conf.t.metadata())
 
@@ -204,7 +204,7 @@ class AWSHybridAutoScalingGroup(MultiRegionAutoScalingGroup):
             resources = [r for r in six.itervalues(self.nested())
                          if r.status != r.FAILED and
                          (r.type() == 'OS::Heat::ScaledResource' or
-                          r.type() == 'OS::Heat::EC2Instance')]
+                          r.type() == 'AWS::VPC::EC2Instance')]
             return len(resources)
         else:
             return 0
@@ -212,7 +212,7 @@ class AWSHybridAutoScalingGroup(MultiRegionAutoScalingGroup):
     def _get_instance_templates(self):
         instance_resources = []
         for member in grouputils.get_members(self):
-            if member.type() == 'OS::Heat::EC2Instance':
+            if member.type() == 'AWS::VPC::EC2Instance':
                 instance_resources.append((member.name, member.t))
 
         for member in grouputils.get_members(self):
