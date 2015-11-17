@@ -161,7 +161,7 @@ class Route(BotoResource):
 
 def resource_mapping():
     return {
-        'OS::Heat::RouteTable': RouteTable,
-        'OS::Heat::SubnetRouteTableAssociation': SubnetRouteTableAssociation,
-        'OS::Heat::Route': Route,
+        'AWS::VPC::RouteTable': RouteTable,
+        'AWS::VPC::SubnetRouteTableAssociation': SubnetRouteTableAssociation,
+        'AWS::VPC::Route': Route,
     }

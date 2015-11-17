@@ -115,6 +115,6 @@ class VPCGatewayAttachment(BotoResource):
 
 def resource_mapping():
     return {
-        'OS::Heat::InternetGateway': InternetGateway,
-        'OS::Heat::VPCGatewayAttachment': VPCGatewayAttachment,
+        'AWS::VPC::InternetGateway': InternetGateway,
+        'AWS::VPC::VPCGatewayAttachment': VPCGatewayAttachment,
     }

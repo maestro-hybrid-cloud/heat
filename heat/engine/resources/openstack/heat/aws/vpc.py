@@ -89,5 +89,5 @@ class VPC(BotoResource):
 
 def resource_mapping():
     return {
-        'OS::Heat::VPC': VPC,
+        'AWS::VPC::VPC': VPC,
     }

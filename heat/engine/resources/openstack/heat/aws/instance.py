@@ -205,5 +205,5 @@ class EC2Instance(BotoResource):
 
 def resource_mapping():
     return {
-        'OS::Heat::EC2Instance': EC2Instance,
+        'AWS::VPC::EC2Instance': EC2Instance,
     }

@@ -101,5 +101,5 @@ class Subnet(BotoResource):
 
 def resource_mapping():
     return {
-        'OS::Heat::Subnet': Subnet,
+        'AWS::VPC::Subnet': Subnet,
     }

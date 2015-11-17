@@ -265,8 +265,8 @@ class VPNConnectionRoute(BotoResource):
 
 def resource_mapping():
     return {
-        'OS::Heat::VPNGateway': VPNGateway,
-        'OS::Heat::CustomerGateway': CustomerGateway,
-        'OS::Heat::VPNConnection': VPNConnection,
-        'OS::Heat::VPNConnectionRoute': VPNConnectionRoute,
+        'AWS::VPC::VPNGateway': VPNGateway,
+        'AWS::VPC::CustomerGateway': CustomerGateway,
+        'AWS::VPC::VPNConnection': VPNConnection,
+        'AWS::VPC::VPNConnectionRoute': VPNConnectionRoute,
     }
