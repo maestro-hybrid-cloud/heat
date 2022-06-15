@@ -1513,7 +1513,7 @@ class Stack(collections.Mapping):
         handle_suspend for this to have any effect.
         """
         # No need to suspend if the stack has been suspended
-        if self.state == (self.SUSPEND, self.COMPLETE):
+        if self.state in (self.SUSPEND, self.COMPLETE):
             LOG.info(_LI('%s is already suspended'), six.text_type(self))
             return
 
